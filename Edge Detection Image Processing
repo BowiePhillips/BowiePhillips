@@ -1,0 +1,138 @@
+import cv2
+import numpy as np
+from io import BytesIO
+import PIL.Image as Image
+from google.colab import files
+import matplotlib.pyplot as plt
+
+# Image loading function
+def loadedImage(uploadedFile):
+    imageStream = BytesIO(uploadedFile)
+    pilImage = Image.open(imageStream).convert('L')  # Convert to grayscale
+    image = np.array(pilImage)
+    if image is None:
+        print("Unable to load image. Please try again")
+        return None
+    return image
+
+# Sobel edge detection
+def sobelEdgeDetection(image):
+    sobelX = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=3)  # Horizontal gradient
+    sobelY = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=3)  # Vertical gradient
+    sobelMagnitude = np.sqrt(sobelX**2 + sobelY**2)  # Gradient magnitude
+    sobelMagnitude = np.uint8(np.clip(sobelMagnitude, 0, 255))
+    return sobelMagnitude
+
+# Prewitt edge detection
+def prewittEdgeDetection(image):
+    kernelX = np.array([[1, 0, -1], [1, 0, -1], [1, 0, -1]])  # Horizontal kernel
+    kernelY = np.array([[1, 1, 1], [0, 0, 0], [-1, -1, -1]])  # Vertical kernel
+    prewittX = cv2.filter2D(image, -1, kernelX)  # Horizontal gradient
+    prewittY = cv2.filter2D(image, -1, kernelY)  # Vertical gradient
+    prewittMagnitude = np.sqrt(prewittX**2 + prewittY**2)  # Gradient magnitude
+    prewittMagnitude = np.uint8(np.clip(prewittMagnitude, 0, 255))
+    return prewittMagnitude
+
+# Canny edge detection
+def cannyEdgeDetection(image, lowThreshold=100, highThreshold=200, blurKernel=(7, 7)):
+    blurred = cv2.GaussianBlur(image, blurKernel, 0)
+    edgeDetection = cv2.Canny(blurred, lowThreshold, highThreshold)
+    kernel = np.ones((3, 3), np.uint8)
+    edgeDetection = cv2.dilate(edgeDetection, kernel, iterations=1)
+    edgeDetection = cv2.erode(edgeDetection, kernel, iterations=1)
+    return edgeDetection
+
+# Metrics evaluation function
+def evaluateEdgeDetectionMetrics(image, edges, method_name):
+    totalPixels = image.size
+    edgePixels = np.count_nonzero(edges)  # Non-zero pixels in the result
+    edgeDensity = (edgePixels / totalPixels) * 100  # Percentage of edge pixels
+
+    # Edge strength (average gradient magnitude)
+    edgeStrength = edges[edges > 0].mean() if np.count_nonzero(edges) > 0 else 0
+
+    # Edge continuity using contours (only for Canny)
+    if method_name == "Canny":
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        numContours = len(contours)
+    else:
+        numContours = None
+
+    return edgeDensity, edgeStrength, numContours
+
+# Display the original image and the edge detection results
+def displayImages(originalImage, sobelEdges, prewittEdges, cannyEdges):
+    plt.figure(figsize=(20, 5))
+    plt.subplot(1, 4, 1)
+    plt.imshow(originalImage, cmap='gray')
+    plt.title('Original Image')
+    plt.axis('off')
+
+    plt.subplot(1, 4, 2)
+    plt.imshow(sobelEdges, cmap='gray')
+    plt.title('Sobel Edge Detection')
+    plt.axis('off')
+
+    plt.subplot(1, 4, 3)
+    plt.imshow(prewittEdges, cmap='gray')
+    plt.title('Prewitt Edge Detection')
+    plt.axis('off')
+
+    plt.subplot(1, 4, 4)
+    plt.imshow(cannyEdges, cmap='gray')
+    plt.title('Canny Edge Detection')
+    plt.axis('off')
+
+    plt.show()
+
+# Graphing function to compare the metrics
+def plotEvaluationComparison(sobelEval, prewittEval, cannyEval):
+    methods = ['Sobel', 'Prewitt', 'Canny']
+
+    edgeDensity = [sobelEval[0], prewittEval[0], cannyEval[0]]
+    edgeStrength = [sobelEval[1], prewittEval[1], cannyEval[1]]
+    edgeContinuity = [0, 0, cannyEval[2] if cannyEval[2] is not None else 0]
+
+    plt.figure(figsize=(10, 5))
+    plt.subplot(1, 3, 1)
+    plt.bar(methods, edgeDensity, color=['blue', 'green', 'red'])
+    plt.title('Edge Density (%)')
+    plt.xlabel('Method')
+    plt.ylabel('Density (%)')
+
+    plt.subplot(1, 3, 2)
+    plt.bar(methods, edgeStrength, color=['blue', 'green', 'red'])
+    plt.title('Edge Strength')
+    plt.xlabel('Method')
+    plt.ylabel('Strength (Avg Gradient Magnitude)')
+
+    plt.subplot(1, 3, 3)
+    plt.bar(methods, edgeContinuity, color=['blue', 'green', 'red'])
+    plt.title('Edge Continuity (Contours)')
+    plt.xlabel('Method')
+    plt.ylabel('Number of Contours')
+
+    plt.tight_layout()
+    plt.show()
+
+if __name__ == "__main__":
+    uploaded = files.upload()
+    for filename in uploaded.keys():
+        print(f"Processing file: {filename}")
+        image = loadedImage(uploaded[filename])
+        if image is not None:
+            # Perform Sobel, Prewitt, and Canny edge detection
+            sobelEdges = sobelEdgeDetection(image)
+            prewittEdges = prewittEdgeDetection(image)
+            cannyEdges = cannyEdgeDetection(image)
+
+            # Display the original image and the results from all three methods
+            displayImages(image, sobelEdges, prewittEdges, cannyEdges)
+
+            # Evaluate edge detection methods
+            sobelEval = evaluateEdgeDetectionMetrics(image, sobelEdges, "Sobel")
+            prewittEval = evaluateEdgeDetectionMetrics(image, prewittEdges, "Prewitt")
+            cannyEval = evaluateEdgeDetectionMetrics(image, cannyEdges, "Canny")
+
+            # Plot and compare evaluation results
+            plotEvaluationComparison(sobelEval, prewittEval, cannyEval)
